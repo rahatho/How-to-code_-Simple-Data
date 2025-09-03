@@ -1,0 +1,119 @@
+!(function (co, h, e, s, i, o, n) {
+  var d = "documentElement";
+  var a = "className";
+  h[d][a] += " preampjs fusejs";
+  n.k = e;
+  co._Cohesion = n;
+  co._Preamp = { k: s, start: new Date() };
+  co._Fuse = { k: i };
+  co._Tagular = { k: o };
+  [e, s, i, o].map(function (x) {
+    co[x] =
+      co[x] ||
+      function () {
+        (co[x].q = co[x].q || []).push([].slice.call(arguments));
+      };
+  });
+  var b = function () {
+    var u = h[d][a];
+    h[d][a] = u.replace(/ ?preampjs| ?fusejs/g, "");
+  };
+  h.addEventListener("DOMContentLoaded", function () {
+    co.setTimeout(b, 3e3);
+    co._Preamp.docReady = co._Fuse.docReady = !0;
+  });
+  var z = h.createElement("script");
+  z.async = 1;
+  z.src = "https://www.edx.org/beam.js";
+  z.onerror = function () {
+    var ce = "error",
+      f = "function";
+    for (var o of co[e].q || []) o[0] === ce && typeof o[1] == f && o[1]();
+    co[e] = function (n, cb) {
+      n === ce && typeof cb == f && cb();
+    };
+    b();
+  };
+  h.head.appendChild(z);
+})(window, document, "cohesion", "preamp", "fuse", "tagular", {
+  domainAllowlist: ["edx.org", "www.edx.org"],
+  tagular: {
+    sourceKey: "src_2euJfAVNt6Z9kQz4e9t1SQBtm8x",
+    writeKey: "wk_2euJfDkJVTtEVzsC8BPOb0g9dVj",
+    apiHost: "https://www.edx.org/beam/v2/t",
+    multiparty: true,
+    useBeacon: true,
+    cookieDomain: "edx.org",
+  },
+  monarch: {
+    sourceId: "bdac7c16-924e-4180-bb35-5b2dfff6d308",
+    endpoint: "https://www.edx.org/beam",
+    token: "b43382aa-9f76-406c-a628-bf96086f1c28",
+    autoRequest: { enabled: false, suppressPlacements: true, timeout: 2000 },
+  },
+  consent: {
+    onetrust: { enabled: true, optIn: true },
+    required: true,
+    domain: ".edx.org",
+    cookieClassification: "C0002",
+  },
+  fuse: { enabled: false },
+  cookieDomain: "edx.org",
+});
+
+// exponentially backoff and retry availability of Segment
+function retryUntilSegmentReady(fn, remainingAttempts = 10, delay = 250) {
+  if (window.analytics && typeof window.analytics.ready === "function") {
+    window.analytics.ready(fn);
+  } else {
+    remainingAttempts--;
+    if (remainingAttempts <= 0) {
+      return;
+    }
+    setTimeout(function () {
+      retryUntilSegmentReady(fn, remainingAttempts, delay * 2); // next exponential delay
+    }, delay);
+  }
+}
+
+function stitchIdentities() {
+  const cohesionAnonymId = window.tagular("getAliasSet")["anonymousId"];
+  const segmentAnonymId = window.analytics.user().anonymousId();
+  const segmentUserId = window.analytics.user().id();
+
+  window.analytics.identify(segmentUserId, {
+    cohesion_anonymous_id: cohesionAnonymId,
+  });
+
+  window.tagular("beam", {
+    "@type": "core.Identify.v1",
+    traits: {},
+    externalIds: [
+      {
+        id: segmentAnonymId,
+        type: "segment_anonymous_id",
+        collection: "users",
+        encoding: "none",
+      },
+      {
+        id: cohesionAnonymId,
+        type: "cohesion_anonymous_id",
+        collection: "users",
+        encoding: "none",
+      },
+      {
+        id: segmentUserId,
+        type: "segment_user_id",
+        collection: "users",
+        encoding: "none",
+      },
+    ],
+  });
+
+  // Set the Segment anonymous ID to the Cohesion anonymous ID
+  window.analytics.setAnonymousId(cohesionAnonymId);
+}
+
+cohesion("tagular:ready", function () {
+  retryUntilSegmentReady(stitchIdentities);
+});
